@@ -8,13 +8,14 @@
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg" alt="platform">
   <img src="https://img.shields.io/badge/Hermes-Plugin-purple.svg" alt="hermes-plugin">
   <img src="https://img.shields.io/badge/i18n-中文%20%7C%20English-orange.svg" alt="i18n">
-  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs welcome">
 </p>
 
 <p>
   <b>一个面向 <a href="https://github.com/NousResearch/hermes">Hermes</a> 的完整 profile / provider / model 生命周期管理插件。</b><br>
   交互式菜单 · Dry-run 预览 · 多语言 · 全生命周期覆盖
 </p>
+
+[中文](./README.md) | [English](./README.en.md)
 
 <p>
   <a href="#-特性">特性</a> ·
@@ -464,12 +465,6 @@ git push origin feature/my-feature
 - 所有新增命令都走 `dry_run_then_apply()` 流程
 - 所有用户可见文案都通过 `i18n.t()` 获取
 - 新增写操作必须有 dry-run 预览 + 确认
-
----
-
-## 📄 License
-
-[MIT](LICENSE) © 2026 Your Name
 
 ---
 

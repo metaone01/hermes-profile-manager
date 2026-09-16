@@ -17,6 +17,8 @@
   Interactive menus · Dry-run previews · Multi-language · Full lifecycle coverage
 </p>
 
+[中文](./README.md) | [English](./README.en.md)
+
 <p>
   <a href="#-features">Features</a> ·
   <a href="#-installation">Installation</a> ·
@@ -465,12 +467,6 @@ Please make sure:
 - Every new command goes through `dry_run_then_apply()`
 - Every user-visible string is fetched via `i18n.t()`
 - Every write operation has a dry-run preview + confirmation
-
----
-
-## 📄 License
-
-[MIT](LICENSE) © 2026 Your Name
 
 ---
 
