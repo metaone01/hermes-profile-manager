@@ -50,12 +50,17 @@
 ### 自动安装
 
 ```bash
-# Linux / macOS
+# Linux / macOS：一行安装，无需克隆仓库
 curl -fsSL https://raw.githubusercontent.com/metaone01/hermes-profile-manager/main/install.sh | bash
 
-# macOS 专用
+# macOS 专用（Homebrew 感知）
 curl -fsSL https://raw.githubusercontent.com/metaone01/hermes-profile-manager/main/install-macos.sh | bash
+
+# 传参：用 `bash -s --` 把选项交给脚本
+curl -fsSL https://raw.githubusercontent.com/metaone01/hermes-profile-manager/main/install.sh | bash -s -- --force
 ```
+
+> 管道安装会自动下载源码压缩包到临时目录，装完即清理；也可先克隆仓库再执行 `./install.sh`（使用仓库内源码，不联网下载）。
 
 ```pwsh
 # Windows

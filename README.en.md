@@ -52,12 +52,17 @@
 ### Install Script
 
 ```bash
-# Linux / macOS
+# Linux / macOS: one-line install, no clone required
 curl -fsSL https://raw.githubusercontent.com/metaone01/hermes-profile-manager/main/install.sh | bash
 
 # macOS (Homebrew-aware)
 curl -fsSL https://raw.githubusercontent.com/metaone01/hermes-profile-manager/main/install-macos.sh | bash
+
+# Pass options through `bash -s --`
+curl -fsSL https://raw.githubusercontent.com/metaone01/hermes-profile-manager/main/install.sh | bash -s -- --force
 ```
+
+> A piped install downloads the source archive into a temp dir and cleans it up afterwards. Clone the repo and run `./install.sh` instead to install from the local source without downloading.
 
 ```pwsh
 # Windows
