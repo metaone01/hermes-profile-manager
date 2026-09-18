@@ -82,6 +82,12 @@ DEST_DIR="$PLUGIN_DIR/pmgr"
 
 # ── 卸载 ────────────────────────────────────────────────────────────
 if [ "$UNINSTALL" -eq 1 ]; then
+    # 安装时会写 plugins.enabled，卸载时对应清掉（先用插件仍在的时机 disable，
+    # 否则 key 解析不到；失败不阻断卸载本身）。
+    if command -v hermes >/dev/null 2>&1; then
+        HERMES_HOME="$HERMES_HOME" hermes plugins disable pmgr </dev/null >/dev/null 2>&1 \
+            && ok "Disabled in $HERMES_HOME/config.yaml" || true
+    fi
     if [ -d "$DEST_DIR" ]; then
         rm -rf "$DEST_DIR"
         ok "Uninstalled: $DEST_DIR"
@@ -275,20 +281,40 @@ fi
 # ── 备份已存在的安装 ────────────────────────────────────────────────
 mkdir -p "$PLUGIN_DIR"
 
+# 备份放到 $HERMES_HOME/backups/plugins/ 而不是 plugins/ 之内：插件目录下每个
+# 含 plugin.yaml 的子目录都会被当成插件扫描，旧副本的 manifest name 同样是
+# pmgr，会和刚装好的版本争同一个 key——实测是旧副本赢，升级后加载的仍是旧代码。
+BACKUP_ROOT="$HERMES_HOME/backups/plugins/pmgr"
+
+backup_existing() {
+    mkdir -p "$BACKUP_ROOT"
+    BACKUP="$BACKUP_ROOT/$(date +%Y%m%d-%H%M%S)-$$"
+    while [ -e "$BACKUP" ]; do
+        BACKUP="${BACKUP}_"
+    done
+    mv "$DEST_DIR" "$BACKUP"
+    ok "Existing installation backed up to: $BACKUP"
+}
+
+# 老版本安装器把备份留在 plugins/ 里，那份副本仍会被当成插件扫描并可能与新装的
+# 版本争同一个 key；提示主人自己搬走（不替主人动数据）。
+for stale in "$PLUGIN_DIR"/pmgr.backup.*; do
+    [ -d "$stale" ] || continue
+    warn "Legacy backup inside the plugin dir is still scanned as a plugin copy:"
+    warn "  $stale"
+    warn "  Move it out:  mv \"$stale\" \"$BACKUP_ROOT/\""
+done
+
 if [ -d "$DEST_DIR" ]; then
     if [ "$FORCE" -eq 1 ]; then
-        BACKUP="$DEST_DIR.backup.$(date +%Y%m%d-%H%M%S)"
-        mv "$DEST_DIR" "$BACKUP"
-        ok "Existing installation backed up to: $BACKUP"
+        backup_existing
     else
         warn "pmgr is already installed at: $DEST_DIR"
         ans="$(ask "Overwrite? Existing files will be backed up. [y/N]: " N)"
         if [[ ! "$ans" =~ ^[Yy]$ ]]; then
             die "Aborted by user"
         fi
-        BACKUP="$DEST_DIR.backup.$(date +%Y%m%d-%H%M%S)"
-        mv "$DEST_DIR" "$BACKUP"
-        ok "Existing installation backed up to: $BACKUP"
+        backup_existing
     fi
 fi
 
@@ -308,6 +334,36 @@ if [ ${#MISSING_FILES[@]} -gt 0 ]; then
 fi
 ok "All files present"
 
+# ── 启用插件 ────────────────────────────────────────────────────────
+# 用户级插件是 opt-in：只把文件放进 plugins/ 不会加载，必须在 config.yaml 的
+# plugins.enabled 里登记（否则 `hermes pmgr` 报 invalid choice / 命令不存在）。
+# 卸载时对应撤销。pmgr 只提供 CLI 子命令，不需要内建工具替换权限，故显式拒绝。
+ENABLED=0
+if [ "${PMGR_NO_ENABLE:-0}" = "1" ]; then
+    warn "Skipping 'hermes plugins enable' (PMGR_NO_ENABLE=1)"
+elif ! command -v hermes >/dev/null 2>&1; then
+    warn "'hermes' not found on PATH; skipping plugin activation"
+else
+    if HERMES_HOME="$HERMES_HOME" hermes plugins enable pmgr --no-allow-tool-override \
+            </dev/null >/dev/null 2>&1; then
+        ok "Plugin enabled in $HERMES_HOME/config.yaml"
+        ENABLED=1
+    else
+        warn "Could not enable the plugin automatically."
+    fi
+fi
+
+# 回读真实状态：enable 写的是哪个 home，就用哪个 home 验证
+VERIFY_HOME="$HERMES_HOME"
+if [ "$ENABLED" -eq 1 ] && command -v hermes >/dev/null 2>&1; then
+    if HERMES_HOME="$VERIFY_HOME" hermes pmgr list >/dev/null 2>&1; then
+        ok "Verified: 'hermes pmgr' responds"
+    else
+        warn "'hermes pmgr' did not respond in $VERIFY_HOME; check 'hermes pmgr --help' manually"
+        ENABLED=0
+    fi
+fi
+
 # ── Gatekeeper 提示（若插件位于下载目录）───────────────────────────
 case "$SELF_DIR" in
     "$HOME/Downloads"*|"$HOME/Desktop"*)
@@ -326,6 +382,7 @@ ${BOLD}${GREEN}✓ pmgr installed successfully on macOS${RESET}
   Plugin dir:  $DEST_DIR
   Hermes home: $HERMES_HOME
   Python:      $PYTHON_BIN ($PY_VER)
+  Activated:   $([ "$ENABLED" -eq 1 ] && printf 'yes' || printf 'NO (see warnings above)')
 
 Next steps:
   1. Restart Hermes

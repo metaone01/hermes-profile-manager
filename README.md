@@ -75,6 +75,7 @@ iwr -useb https://raw.githubusercontent.com/metaone01/hermes-profile-manager/mai
 git clone https://github.com/metaone01/hermes-profile-manager.git
 mkdir -p ~/.hermes/plugins
 cp -r hermes-profile-manager/pmgr ~/.hermes/plugins/
+hermes plugins enable pmgr
 ```
 
 #### 手动放置
@@ -93,6 +94,10 @@ cp -r hermes-profile-manager/pmgr ~/.hermes/plugins/
     └── cli.py
 ```
 
+> ⚠️ 只复制文件是不够的。用户级插件是 **opt-in**：不执行 `hermes plugins enable pmgr`，
+> Hermes 就不会加载它，`hermes pmgr` 会报 `invalid choice: 'pmgr'`（看起来像"命令不存在"）。
+> 三个安装脚本都会自动完成这一步并回读验证。
+
 ### 依赖
 
 - Python **3.9+**
@@ -102,6 +107,19 @@ cp -r hermes-profile-manager/pmgr ~/.hermes/plugins/
 ```bash
 pip install pyyaml httpx
 ```
+
+### 启用插件
+
+用户级插件默认**不加载**，装完必须登记到 `plugins.enabled`：
+
+```bash
+hermes plugins enable pmgr        # 写 $HERMES_HOME/config.yaml
+hermes plugins show pmgr          # 应显示 Status: enabled
+```
+
+`HERMES_HOME` 决定写到哪个 home：不设时用 `~/.hermes`（default），设了则写该 profile
+的 `config.yaml`。**正在运行的 gateway 只在启动时扫描一次插件**，所以要让 gateway
+里的会话用上 `hermes pmgr`，需要重启 gateway（或新起一个会话）。
 
 ### 验证安装
 
@@ -364,7 +382,8 @@ cd hermes-profile-manager
 
 ln -sf "$(pwd)/pmgr" ~/.hermes/plugins/pmgr
 
-# 每次修改后重启 Hermes 即可生效
+# 首次需要 enable 一次（之后改代码只需重启 Hermes）
+hermes plugins enable pmgr
 
 hermes pmgr list
 ```
@@ -440,7 +459,47 @@ hermes pmgr export -o backup.yaml
 </details>
 
 <details>
-<summary><b>Q: 如何从备份恢复？</b></summary>
+<summary><b>Q: 安装成功、也重启了，但 `hermes pmgr` 报 `invalid choice: 'pmgr'`？</b></summary>
+
+插件没被启用。用户级插件是 opt-in：文件放对位置还不够，必须登记进
+`plugins.enabled`。
+
+```bash
+hermes plugins enable pmgr
+hermes plugins show pmgr     # Status: enabled
+```
+
+还要确认 `HERMES_HOME` 指向的是你正在用的那个 home：`hermes plugins enable` 写的是
+`$HERMES_HOME/config.yaml`，不设时是 `~/.hermes`。装到 A home、启用写在 B home
+（或反过来）都会表现为"识别不到"。
+
+</details>
+
+<details>
+<summary><b>Q: 为什么备份目录放在 `~/.hermes/backups/plugins/pmgr/` 而不是插件目录里？</b></summary>
+
+插件目录下每个含 `plugin.yaml` 的子目录都会被当插件扫描。旧版本安装器把备份留在
+`plugins/pmgr.backup.<时间戳>/`，那份副本的 manifest name 同样是 `pmgr`，会和刚装好的
+版本争同一个 key——实测**旧副本赢**，于是升级后加载的仍是旧代码。现在备份统一放到
+`$HERMES_HOME/backups/plugins/pmgr/`。若你机器上已有旧的 `plugins/pmgr.backup.*`，
+安装器会提示，搬走即可（助手不会替你动这些数据）。
+
+</details>
+
+<details>
+<summary><b>Q: 怎么卸载？会自动清理 `plugins.enabled` 吗？</b></summary>
+
+```bash
+./install.sh --uninstall     # 或 install-macos.sh / install.ps1 -Uninstall
+```
+
+会先把 `pmgr` 从 `plugins.enabled` 摘掉，再删插件目录。手动装的则自己执行
+`hermes plugins disable pmgr`。
+
+</details>
+
+<details>
+<summary><b>Q: 怎么从备份恢复？</b></summary>
 
 `~/.hermes/.backup/<name>-<timestamp>/` 中包含当时的 `config.yaml` 和 `.env`，直接复制回 `profiles/<name>/` 即可。
 

@@ -100,8 +100,33 @@ if ($env:HERMES_HOME) {
 $PluginDir = Join-Path $HermesHome 'plugins'
 $DestDir   = Join-Path $PluginDir 'pmgr'
 
+# hermes 可执行文件（用于写/读 config.yaml 的 plugins.enabled）；找不到时静默跳过
+$HermesCmd = Get-Command hermes -ErrorAction SilentlyContinue
+
+# 在指定的 HERMES_HOME 下执行 `hermes <args>` 并返回退出码（不影响调用者环境）
+function Invoke-Hermes {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
+    if (-not $HermesCmd) { return 127 }
+    $prevHome = $env:HERMES_HOME
+    $env:HERMES_HOME = $HermesHome
+    try {
+        & $HermesCmd @Args *> $null
+        return $LASTEXITCODE
+    } finally {
+        if ($null -eq $prevHome) { Remove-Item Env:\HERMES_HOME -ErrorAction SilentlyContinue }
+        else { $env:HERMES_HOME = $prevHome }
+    }
+}
+
 # ── 卸载 ────────────────────────────────────────────────────────────
 if ($Uninstall) {
+    # 安装时会把插件写进 config.yaml 的 plugins.enabled，卸载时对应清掉
+    # （先用插件仍在的时机 disable；失败不阻断卸载本身）。
+    if ($HermesCmd) {
+        $rc = Invoke-Hermes plugins disable pmgr
+        if ($rc -eq 0) { Write-Ok "Disabled in $HermesHome\config.yaml" }
+        else { Write-Warn2 "Could not disable automatically; remove 'pmgr' from plugins.enabled by hand." }
+    }
     if (Test-Path $DestDir) {
         Remove-Item -Recurse -Force $DestDir
         Write-Ok "Uninstalled: $DestDir"
@@ -194,9 +219,28 @@ if (-not (Test-Path $PluginDir)) {
     New-Item -ItemType Directory -Path $PluginDir -Force | Out-Null
 }
 
+# 备份放到 $HermesHome\backups\plugins\ 而不是 plugins\ 之内：插件目录下每个含
+# plugin.yaml 的子目录都会被当成插件扫描，旧副本的 manifest name 同样是 pmgr，
+# 会和刚装好的版本争同一个 key——实测旧副本赢，升级后加载的仍是旧代码。
+$BackupRoot = Join-Path (Join-Path (Join-Path $HermesHome 'backups') 'plugins') 'pmgr'
+
+# 老版本安装器把备份留在 plugins\ 里：提示主人搬走（不替主人动数据）
+Get-ChildItem -Path $PluginDir -Directory -Filter 'pmgr.backup.*' -ErrorAction SilentlyContinue |
+    ForEach-Object {
+        Write-Warn2 "Legacy backup inside the plugin dir is still scanned as a plugin copy:"
+        Write-Warn2 "  $($_.FullName)"
+        Write-Warn2 "  Move it out:  Move-Item '$($_.FullName)' '$BackupRoot\'"
+    }
+
 if (Test-Path $DestDir) {
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $backup = "$DestDir.backup.$timestamp"
+    if (-not (Test-Path $BackupRoot)) {
+        New-Item -ItemType Directory -Path $BackupRoot -Force | Out-Null
+    }
+    $backup = Join-Path $BackupRoot "$timestamp-$PID"
+    while (Test-Path $backup) {
+        $backup = "${backup}_"
+    }
 
     if (-not $Force) {
         Write-Warn2 "pmgr is already installed at: $DestDir"
@@ -228,6 +272,34 @@ if ($missingFiles.Count -gt 0) {
 }
 Write-Ok "All files present"
 
+# ── 启用插件 ────────────────────────────────────────────────────────
+# 用户级插件是 opt-in：只把文件放进 plugins/ 不会加载，必须在 config.yaml 的
+# plugins.enabled 里登记（否则 `hermes pmgr` 命令不存在）。pmgr 只提供 CLI
+# 子命令，不需要内建工具替换权限，故显式拒绝该授权。
+$Enabled = $false
+if ($env:PMGR_NO_ENABLE -eq '1') {
+    Write-Warn2 "Skipping 'hermes plugins enable' (PMGR_NO_ENABLE=1)"
+} elseif (-not $HermesCmd) {
+    Write-Warn2 "'hermes' not found on PATH; skipping plugin activation"
+} else {
+    if ((Invoke-Hermes plugins enable pmgr --no-allow-tool-override) -eq 0) {
+        Write-Ok "Plugin enabled in $HermesHome\config.yaml"
+        $Enabled = $true
+    } else {
+        Write-Warn2 "Could not enable the plugin automatically."
+    }
+}
+
+# 回读真实状态：确认 enable 之后 `hermes pmgr` 真的能响应
+if ($Enabled) {
+    if ((Invoke-Hermes pmgr list) -eq 0) {
+        Write-Ok "Verified: 'hermes pmgr' responds"
+    } else {
+        Write-Warn2 "'hermes pmgr' did not respond; check 'hermes pmgr --help' manually"
+        $Enabled = $false
+    }
+}
+
 # ── 清理临时目录 ────────────────────────────────────────────────────
 if ($TmpDir -and (Test-Path $TmpDir)) {
     Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue
@@ -239,10 +311,15 @@ Write-Host "OK  pmgr installed successfully" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Plugin dir:  $DestDir"
 Write-Host "  Hermes home: $HermesHome"
+Write-Host "  Activated:   $(if ($Enabled) { 'yes' } else { 'NO (see warnings above)' })"
 Write-Host ""
 Write-Host "Next steps:"
-Write-Host "  1. Restart Hermes"
-Write-Host "  2. Run:  hermes pmgr list"
-Write-Host "  3. Run:  hermes pmgr doctor"
+Write-Host "  1. Run:  hermes pmgr list"
+Write-Host "  2. Run:  hermes pmgr doctor"
 Write-Host ""
 Write-Host "Docs:  https://github.com/metaone01/hermes-profile-manager"
+if ($Enabled) {
+    Write-Host ""
+    Write-Host "Note: a running gateway loaded its plugins at startup; restart it (or start a new" -ForegroundColor DarkGray
+    Write-Host "session) before ``hermes pmgr`` shows up there." -ForegroundColor DarkGray
+}

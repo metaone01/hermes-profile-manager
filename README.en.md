@@ -77,6 +77,7 @@ iwr -useb https://raw.githubusercontent.com/metaone01/hermes-profile-manager/mai
 git clone https://github.com/metaone01/hermes-profile-manager.git
 mkdir -p ~/.hermes/plugins
 cp -r hermes-profile-manager/pmgr ~/.hermes/plugins/
+hermes plugins enable pmgr
 ```
 
 #### Manual Placement
@@ -95,6 +96,11 @@ Place the `pmgr/` directory under Hermes' plugin directory:
     └── cli.py
 ```
 
+> ⚠️ Copying the files is not enough. User plugins are **opt-in**: without
+> `hermes plugins enable pmgr`, Hermes never loads it and `hermes pmgr` fails with
+> `invalid choice: 'pmgr'` (which looks like "the command does not exist"). All three
+> install scripts now do this step and read the state back to verify it.
+
 ### Dependencies
 
 - Python **3.9+**
@@ -104,6 +110,20 @@ Place the `pmgr/` directory under Hermes' plugin directory:
 ```bash
 pip install pyyaml httpx
 ```
+
+### Enable the Plugin
+
+User plugins are **not loaded by default**; you must register it in `plugins.enabled`:
+
+```bash
+hermes plugins enable pmgr        # writes $HERMES_HOME/config.yaml
+hermes plugins show pmgr          # should print Status: enabled
+```
+
+`HERMES_HOME` decides WHICH home is written: unset means `~/.hermes` (the `default`
+profile), set means that profile's `config.yaml`. A **running gateway scans plugins once,
+at startup**, so a gateway-hosted session only sees `hermes pmgr` after you restart the
+gateway (or start a new session).
 
 ### Verify Installation
 
@@ -366,7 +386,8 @@ cd hermes-profile-manager
 
 ln -sf "$(pwd)/pmgr" ~/.hermes/plugins/pmgr
 
-# Restart Hermes after each change
+# Enable once (after that, editing the code only needs a Hermes restart)
+hermes plugins enable pmgr
 
 hermes pmgr list
 ```
@@ -438,6 +459,47 @@ By default it backs up to `~/.hermes/.backup/` first. Use `--no-backup` to skip.
 <summary><b>Q: How many tokens does `test` consume?</b></summary>
 
 Usually fewer than 20 tokens per profile. It lists the target profiles and asks for confirmation before running, then reports the actual total consumed.
+
+</details>
+
+<details>
+<summary><b>Q: The install succeeded and I restarted Hermes, but `hermes pmgr` says `invalid choice: 'pmgr'`?</b></summary>
+
+The plugin was never enabled. User plugins are opt-in: putting the files in place is not
+enough, the plugin must be registered in `plugins.enabled`.
+
+```bash
+hermes plugins enable pmgr
+hermes plugins show pmgr     # Status: enabled
+```
+
+Also make sure `HERMES_HOME` is the home you actually use: `hermes plugins enable` writes
+`$HERMES_HOME/config.yaml`, which defaults to `~/.hermes`. Installing into one home and
+enabling in another (or vice versa) both look exactly like "Hermes cannot see it".
+
+</details>
+
+<details>
+<summary><b>Q: Why is the backup under `~/.hermes/backups/plugins/pmgr/` instead of the plugin dir?</b></summary>
+
+Every subdirectory of the plugin dir that contains a `plugin.yaml` is scanned as a plugin.
+The old installer left backups at `plugins/pmgr.backup.<timestamp>/`; that copy declares the
+same manifest name `pmgr` and competes for the same registry key — measured behaviour: the
+**stale copy wins**, so an upgrade keeps loading the old code. Backups now live under
+`$HERMES_HOME/backups/plugins/pmgr/`. If you already have a `plugins/pmgr.backup.*`, the
+installer warns about it; move it out yourself (the assistant will not touch your data).
+
+</details>
+
+<details>
+<summary><b>Q: How do I uninstall, and does it clean up `plugins.enabled`?</b></summary>
+
+```bash
+./install.sh --uninstall     # or install-macos.sh / install.ps1 -Uninstall
+```
+
+It removes `pmgr` from `plugins.enabled` first, then deletes the plugin directory. If you
+placed the files by hand, run `hermes plugins disable pmgr` yourself.
 
 </details>
 
