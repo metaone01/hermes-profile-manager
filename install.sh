@@ -225,14 +225,32 @@ backup_existing() {
     ok "Existing installation backed up to: $BACKUP"
 }
 
-# 老版本安装器把备份留在 plugins/ 里，那份副本仍会被当成插件扫描并可能与新装的
-# 版本争同一个 key；提示主人自己搬走（不替主人动数据）。
+# 老版本安装器把备份留在 plugins/ 里，那份副本会被当成**独立插件**扫描。实测两份
+# manifest name 都是 pmgr 时同 key 竞争，旧副本胜出（8/8 次），于是新装的代码根本
+# 没被加载——表现就是"装好了也重启了，命令还是崩/还是旧行为"。
+# 因此这里直接移走，而不是只警告：留着这一份，本次安装等于没生效。
+# 需要保留原地时用 PMGR_KEEP_LEGACY=1（自担风险，只会告警）。
+LEGACY_MOVED=0
 for stale in "$PLUGIN_DIR"/pmgr.backup.*; do
     [ -d "$stale" ] || continue
-    warn "Legacy backup inside the plugin dir is still scanned as a plugin copy:"
-    warn "  $stale"
-    warn "  Move it out:  mv \"$stale\" \"$BACKUP_ROOT/\""
+    if [ "${PMGR_KEEP_LEGACY:-0}" = "1" ]; then
+        warn "Legacy copy inside the plugin dir competes for plugin key 'pmgr':"
+        warn "  $stale"
+        warn "  Move it out yourself:  mv \"$stale\" \"$BACKUP_ROOT/\""
+        continue
+    fi
+    mkdir -p "$BACKUP_ROOT"
+    LEGACY_DEST="$BACKUP_ROOT/legacy-$(basename "$stale")"
+    while [ -e "$LEGACY_DEST" ]; do
+        LEGACY_DEST="${LEGACY_DEST}_"
+    done
+    mv "$stale" "$LEGACY_DEST"
+    LEGACY_MOVED=$((LEGACY_MOVED + 1))
+    ok "Moved competing legacy copy out of the plugin dir: $LEGACY_DEST"
 done
+if [ "$LEGACY_MOVED" -gt 0 ]; then
+    ok "Isolated $LEGACY_MOVED legacy copy/copies (they would have shadowed the new install)"
+fi
 
 if [ -d "$DEST_DIR" ]; then
     if [ "$FORCE" -eq 1 ]; then
@@ -263,6 +281,29 @@ if [ ${#MISSING_FILES[@]} -gt 0 ]; then
 fi
 ok "All files present"
 
+# ── 竞争副本自查 ────────────────────────────────────────────────────
+# plugins/ 下每个含 plugin.yaml 的子目录都是一个独立插件，按 manifest name 抢占同一个
+# key。实测：同名的旧副本（形如 pmgr.backup.*）按目录名排序在 pmgr 之后被扫描，因而
+# **覆盖**注册——`hermes pmgr` 实际执行的是那份旧代码。这种状态下 `hermes pmgr list`
+# 仍然"能跑"，所以只靠下面的响应测试会误报成功。
+COMPETING=""
+for d in "$PLUGIN_DIR"/*/; do
+    d="${d%/}"
+    [ -d "$d" ] || continue
+    [ "$d" = "$DEST_DIR" ] && continue
+    [ -f "$d/plugin.yaml" ] || continue
+    if grep -qE "^[[:space:]]*name:[[:space:]]*[\"']?pmgr[\"']?[[:space:]]*\$" "$d/plugin.yaml"; then
+        COMPETING="$d"
+    fi
+done
+if [ -n "$COMPETING" ]; then
+    warn "Another copy in the plugin dir registers the same plugin name 'pmgr':"
+    warn "  $COMPETING"
+    warn "  It wins the key and shadows this installation; remove or move it out."
+else
+    ok "No competing copy of 'pmgr' in $PLUGIN_DIR"
+fi
+
 # ── 启用插件 ────────────────────────────────────────────────────────
 # 用户级插件是 opt-in：只把文件放进 plugins/ 不会加载，必须在 config.yaml 的
 # plugins.enabled 里登记（否则 `hermes pmgr` 报 invalid choice / 命令不存在）。
@@ -282,9 +323,16 @@ else
     fi
 fi
 
-# 回读真实状态：enable 写的是哪个 home，就用哪个 home 验证
+# 回读真实状态：enable 写的是哪个 home，就用哪个 home 验证。
+# 注意 `hermes plugins show pmgr` 只会列出赢到 key 的那份 / 或按 name 查到的第一份，被
+# 同名副本遮蔽时它仍可能报出新版本号，所以不能只信版本号——以竞争副本自查为准。
 VERIFY_HOME="$HERMES_HOME"
-if [ "$ENABLED" -eq 1 ] && command -v hermes >/dev/null 2>&1; then
+VERIFY_NOTE=""
+if [ "$ENABLED" -eq 1 ] && [ -n "$COMPETING" ]; then
+    warn "Activation NOT verified: '$COMPETING' still registers the name 'pmgr'."
+    ENABLED=0
+    VERIFY_NOTE="blocked by competing copy"
+elif [ "$ENABLED" -eq 1 ] && command -v hermes >/dev/null 2>&1; then
     if HERMES_HOME="$VERIFY_HOME" hermes pmgr list >/dev/null 2>&1; then
         ok "Verified: 'hermes pmgr' responds"
     else
@@ -300,7 +348,7 @@ ${BOLD}${GREEN}✓ pmgr installed successfully${RESET}
 
   Plugin dir:  $DEST_DIR
   Hermes home: $HERMES_HOME
-  Activated:   $([ "$ENABLED" -eq 1 ] && printf 'yes' || printf 'NO (see warnings above)')
+  Activated:   $([ "$ENABLED" -eq 1 ] && printf 'yes' || printf 'NO (see warnings above)')${VERIFY_NOTE:+ ($VERIFY_NOTE)}
 
 Next steps:
   1. Run:  hermes pmgr list

@@ -224,13 +224,32 @@ if (-not (Test-Path $PluginDir)) {
 # 会和刚装好的版本争同一个 key——实测旧副本赢，升级后加载的仍是旧代码。
 $BackupRoot = Join-Path (Join-Path (Join-Path $HermesHome 'backups') 'plugins') 'pmgr'
 
-# 老版本安装器把备份留在 plugins\ 里：提示主人搬走（不替主人动数据）
+# 老版本安装器把备份留在 plugins\ 里：那份副本会被当成**独立插件**扫描，与正式副本
+# 按 manifest name 争同一个 key，实测旧副本胜出，于是新装的代码根本没被加载——表现
+# 就是"装好了也重启了，命令还是崩/还是旧行为"。
+# 因此直接移走，而不是只警告：留着这一份，本次安装等于没生效。
+# 需要保留原地时设 $env:PMGR_KEEP_LEGACY='1'（自担风险，只会告警）。
+$LegacyMoved = 0
 Get-ChildItem -Path $PluginDir -Directory -Filter 'pmgr.backup.*' -ErrorAction SilentlyContinue |
     ForEach-Object {
-        Write-Warn2 "Legacy backup inside the plugin dir is still scanned as a plugin copy:"
-        Write-Warn2 "  $($_.FullName)"
-        Write-Warn2 "  Move it out:  Move-Item '$($_.FullName)' '$BackupRoot\'"
+        if ($env:PMGR_KEEP_LEGACY -eq '1') {
+            Write-Warn2 "Legacy copy inside the plugin dir competes for plugin key 'pmgr':"
+            Write-Warn2 "  $($_.FullName)"
+            Write-Warn2 "  Move it out yourself:  Move-Item '$($_.FullName)' '$BackupRoot\'"
+        } else {
+            if (-not (Test-Path $BackupRoot)) {
+                New-Item -ItemType Directory -Path $BackupRoot -Force | Out-Null
+            }
+            $legacyDest = Join-Path $BackupRoot "legacy-$($_.Name)"
+            while (Test-Path $legacyDest) { $legacyDest = "${legacyDest}_" }
+            Move-Item -Path $_.FullName -Destination $legacyDest -Force
+            $LegacyMoved++
+            Write-Ok "Moved competing legacy copy out of the plugin dir: $legacyDest"
+        }
     }
+if ($LegacyMoved -gt 0) {
+    Write-Ok "Isolated $LegacyMoved legacy copy/copies (they would have shadowed the new install)"
+}
 
 if (Test-Path $DestDir) {
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -272,6 +291,26 @@ if ($missingFiles.Count -gt 0) {
 }
 Write-Ok "All files present"
 
+# ── 竞争副本自查 ────────────────────────────────────────────────────
+# plugins\ 下每个含 plugin.yaml 的子目录都是一个独立插件，按 manifest name 抢占同一个
+# key。同名的旧副本会覆盖注册，`hermes pmgr` 实际执行的是那份旧代码，而响应测试仍然
+# "能跑"，于是误报成功。
+$Competing = ''
+Get-ChildItem -Path $PluginDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.FullName -eq $DestDir) { return }
+    $mf = Join-Path $_.FullName 'plugin.yaml'
+    if (-not (Test-Path $mf)) { return }
+    $nameLine = Select-String -Path $mf -Pattern '^\s*name:\s*["'']?pmgr["'']?\s*$' -ErrorAction SilentlyContinue
+    if ($nameLine) { $Competing = $_.FullName }
+}
+if ($Competing) {
+    Write-Warn2 "Another copy in the plugin dir registers the same plugin name 'pmgr':"
+    Write-Warn2 "  $Competing"
+    Write-Warn2 "  It wins the key and shadows this installation; remove or move it out."
+} else {
+    Write-Ok "No competing copy of 'pmgr' in $PluginDir"
+}
+
 # ── 启用插件 ────────────────────────────────────────────────────────
 # 用户级插件是 opt-in：只把文件放进 plugins/ 不会加载，必须在 config.yaml 的
 # plugins.enabled 里登记（否则 `hermes pmgr` 命令不存在）。pmgr 只提供 CLI
@@ -290,8 +329,13 @@ if ($env:PMGR_NO_ENABLE -eq '1') {
     }
 }
 
-# 回读真实状态：确认 enable 之后 `hermes pmgr` 真的能响应
-if ($Enabled) {
+# 回读真实状态：确认 enable 之后 `hermes pmgr` 真的能响应。
+# 注意被同名副本遮蔽时它仍然"能跑"，所以先看竞争副本自查的结论。
+if ($Enabled -and $Competing) {
+    Write-Warn2 "Activation NOT verified: '$Competing' still registers the name 'pmgr'."
+    $Enabled = $false
+    $VerifyNote = 'blocked by competing copy'
+} elseif ($Enabled) {
     if ((Invoke-Hermes pmgr list) -eq 0) {
         Write-Ok "Verified: 'hermes pmgr' responds"
     } else {
@@ -311,7 +355,7 @@ Write-Host "OK  pmgr installed successfully" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Plugin dir:  $DestDir"
 Write-Host "  Hermes home: $HermesHome"
-Write-Host "  Activated:   $(if ($Enabled) { 'yes' } else { 'NO (see warnings above)' })"
+Write-Host "  Activated:   $(if ($Enabled) { 'yes' } else { 'NO (see warnings above)' })$(if ($VerifyNote) { " ($VerifyNote)" } else { '' })"
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. Run:  hermes pmgr list"

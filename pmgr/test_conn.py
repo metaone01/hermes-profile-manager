@@ -9,6 +9,7 @@ from .core import (
     provider_env_key, read_model_config, get_providers_block,
     list_profiles,
 )
+from .commands import read_prompt
 from .i18n import t
 
 
@@ -176,7 +177,7 @@ def cmd_test(patterns: list, auto_yes: bool = False) -> int:
             f"    • {t_['profile']}  ({t_['provider']} / {t_['model']})"
             for t_ in runnable)
         print(t("test_warning", n=len(runnable), targets=target_lines))
-        raw = input(t("test_warning_confirm")).strip().lower()
+        raw = read_prompt(t("test_warning_confirm")).strip().lower()
         if raw not in ("y", "yes", "是"):
             print(t("cancelled"))
             return 1

@@ -485,9 +485,39 @@ enabling in another (or vice versa) both look exactly like "Hermes cannot see it
 Every subdirectory of the plugin dir that contains a `plugin.yaml` is scanned as a plugin.
 The old installer left backups at `plugins/pmgr.backup.<timestamp>/`; that copy declares the
 same manifest name `pmgr` and competes for the same registry key — measured behaviour: the
-**stale copy wins**, so an upgrade keeps loading the old code. Backups now live under
-`$HERMES_HOME/backups/plugins/pmgr/`. If you already have a `plugins/pmgr.backup.*`, the
-installer warns about it; move it out yourself (the assistant will not touch your data).
+**stale copy wins** (sorted by directory name, `pmgr.backup.*` is scanned after `pmgr` and
+overwrites the registration), so an upgrade keeps loading the old code. Backups now live under
+`$HERMES_HOME/backups/plugins/pmgr/`, and the installer also moves any `plugins/pmgr.backup.*`
+already in the plugin dir there (set `PMGR_KEEP_LEGACY=1` to keep it in place and get a warning
+instead).
+
+</details>
+
+<details>
+<summary><b>Q: It installed and I restarted, but instead of "no such command" I get a Traceback?</b></summary>
+
+Two distinct faults with very similar symptoms:
+
+1. **`ImportError: cannot import name 'commands' from 'hermes_plugins'`** — the top-level
+   `hermes pmgr` path had a leftover invalid relative import (`from .. import commands`).
+   Inside Hermes the plugin loads as `hermes_plugins.pmgr`, which has no sibling package.
+   Removed.
+2. **`TypeError: t() got multiple values for argument 'key'`** — `t()`'s parameter was named
+   `key`, colliding with the `{key}` placeholder in message templates, so anything going
+   through an `env set`/`set` preview crashed. `key` is now positional-only.
+
+Neither occurs after v2.0.0. If you still see a Traceback, first confirm the new code is what
+is actually loaded — when a same-named copy shadows it, `hermes plugins list` still reports the
+new version while the old copy is what runs:
+
+```bash
+hermes plugins list --plain --no-bundled   # check the reported version
+ls "$HERMES_HOME/plugins"                  # a pmgr.backup.* means it is shadowed
+mv "$HERMES_HOME/plugins/pmgr.backup."* "$HERMES_HOME/backups/plugins/pmgr/"
+```
+
+The installer now does this automatically and marks `Activated` as `NO` when it cannot isolate
+the copy, instead of reporting a false success.
 
 </details>
 

@@ -317,7 +317,14 @@ def _detect_lang() -> str:
 _LANG = _detect_lang()
 
 
-def t(key: str, **kwargs) -> str:
+def t(key: str, /, **kwargs) -> str:
+    """查表并用 kwargs 格式化。
+
+    ``key`` 声明为仅位置参数：模板里存在 ``{key}`` 占位符，
+    调用方写 ``t("preview_env_set", key="TOKEN")`` 时该关键字会与形参同名冲突
+    （``TypeError: t() got multiple values for argument 'key'``）。
+    仅位置参数把所有占位符名都留给关键字。
+    """
     table = MESSAGES.get(_LANG, MESSAGES["en"])
     msg = table.get(key) or MESSAGES["en"].get(key, key)
     return msg.format(**kwargs) if kwargs else msg

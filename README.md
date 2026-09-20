@@ -480,9 +480,35 @@ hermes plugins show pmgr     # Status: enabled
 
 插件目录下每个含 `plugin.yaml` 的子目录都会被当插件扫描。旧版本安装器把备份留在
 `plugins/pmgr.backup.<时间戳>/`，那份副本的 manifest name 同样是 `pmgr`，会和刚装好的
-版本争同一个 key——实测**旧副本赢**，于是升级后加载的仍是旧代码。现在备份统一放到
-`$HERMES_HOME/backups/plugins/pmgr/`。若你机器上已有旧的 `plugins/pmgr.backup.*`，
-安装器会提示，搬走即可（助手不会替你动这些数据）。
+版本争同一个 key——实测**旧副本赢**（按目录名排序，`pmgr.backup.*` 排在 `pmgr` 之后被
+扫描，因而覆盖注册），于是升级后加载的仍是旧代码。现在备份统一放到
+`$HERMES_HOME/backups/plugins/pmgr/`，安装器还会自动把已经留在插件目录里的
+`plugins/pmgr.backup.*` 移到那里（要保留原地可设 `PMGR_KEEP_LEGACY=1`，此时它只告警）。
+
+</details>
+
+<details>
+<summary><b>Q: 装好了、也重启了，命令不报"没有这个命令"却直接抛 Traceback？</b></summary>
+
+两种不同的故障，症状很像：
+
+1. **`ImportError: cannot import name 'commands' from 'hermes_plugins'`** —— 顶层
+   `hermes pmgr` 路径有个残留的无效相对导入（`from .. import commands`），插件在
+   Hermes 里是被加载成 `hermes_plugins.pmgr` 的，没有兄弟包可导入。已删除。
+2. **`TypeError: t() got multiple values for argument 'key'`** —— `t()` 的形参名 `key`
+   与文案模板里的 `{key}` 占位符撞名，凡是走 `env set`/`set` 预览的路径都会崩。已把
+   `key` 改为仅位置参数。
+
+修复后（v2.0.0 之后）两种情况都不再出现。若仍见到 Traceback，先确认加载的确实是
+新代码——被同名副本遮蔽时 `hermes plugins list` 会显示新版本号，但实际执行的是旧副本：
+
+```bash
+hermes plugins list --plain --no-bundled   # 看 pmgr 的版本
+ls "$HERMES_HOME/plugins"                # 有 pmgr.backup.* 就是被遮蔽了
+mv "$HERMES_HOME/plugins/pmgr.backup."* "$HERMES_HOME/backups/plugins/pmgr/"
+```
+
+安装器现在会自动做这一步，并在无法隔离时把 `Activated` 标成 `NO`，不再假报成功。
 
 </details>
 

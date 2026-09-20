@@ -24,8 +24,20 @@ from .i18n import t
 #  通用预览 / 确认
 # ═════════════════════════════════════════════════════════════════
 
+def read_prompt(prompt: str) -> str:
+    """读一行输入；无可用 stdin（管道/CI/关闭的 fd）时返回空串。
+
+    非交互调用下 ``input()`` 抛 ``EOFError`` 会打出裸 traceback，而用户看到的是
+    "命令崩了"。返回空串让各调用方走各自的默认分支（确认 → 取消，选择 → 默认项）。
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        return ""
+
+
 def confirm(prompt_key: str = "confirm_write") -> bool:
-    raw = input(t(prompt_key)).strip().lower()
+    raw = read_prompt(t(prompt_key)).strip().lower()
     return raw in ("y", "yes", "是")
 
 
@@ -61,7 +73,7 @@ def prompt_choice(prompt: str, options: list, default_index: int = 0) -> str:
     for i, opt in enumerate(options):
         marker = "▸" if i == default_index else " "
         print(f"  {marker} [{i + 1}] {opt}")
-    raw = input(t("prompt_choice")).strip()
+    raw = read_prompt(t("prompt_choice")).strip()
     if not raw:
         return options[default_index]
     if raw.isdigit():
@@ -82,7 +94,7 @@ def prompt_multi_choice(prompt: str, options: list, defaults: list = None) -> li
         mark = "x" if opt in defaults else " "
         print(f"  [{mark}] [{i + 1}] {opt}")
     print(f"        [a] {t('select_all')}")
-    raw = input(t("prompt_multi")).strip()
+    raw = read_prompt(t("prompt_multi")).strip()
     if not raw:
         return defaults
     if raw.lower() in ("a", "all", "*"):
@@ -107,9 +119,9 @@ def prompt_multi_choice(prompt: str, options: list, defaults: list = None) -> li
 
 def prompt_text(prompt: str, default: str = "") -> str:
     if default:
-        raw = input(t("prompt_text_default", prompt=prompt, default=default)).strip()
+        raw = read_prompt(t("prompt_text_default", prompt=prompt, default=default)).strip()
         return raw or default
-    return input(t("prompt_text", prompt=prompt)).strip()
+    return read_prompt(t("prompt_text", prompt=prompt)).strip()
 
 
 # ═════════════════════════════════════════════════════════════════

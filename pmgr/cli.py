@@ -217,7 +217,7 @@ def _handle_delete(args):
     # 二次确认：输入 profile 名
     _render_delete(changes[0])
     if not args.yes:
-        raw = input(f"\nType '{args.name}' to confirm deletion: ").strip()
+        raw = C.read_prompt(f"\nType '{args.name}' to confirm deletion: ").strip()
         if raw != args.name:
             print(t("delete_mismatch"))
             return
@@ -295,7 +295,6 @@ def _handle_default(args):
         save_yaml,
         CONFIG_PATH,
     )
-    from .. import commands as C2
 
     if args.default and args.all:
         profiles = [p for p in list_profiles() if p != "default"]
