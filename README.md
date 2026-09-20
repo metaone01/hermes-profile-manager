@@ -2,7 +2,7 @@
 <h1>📦 pmgr — Hermes Profile 管理器</h1>
 
 <p>
-  <img src="https://img.shields.io/badge/version-2.0.0-blue.svg" alt="version">
+  <img src="https://img.shields.io/badge/version-2.0.1-blue.svg" alt="version">
   <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="python">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license">
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg" alt="platform">
@@ -499,7 +499,7 @@ hermes plugins show pmgr     # Status: enabled
    与文案模板里的 `{key}` 占位符撞名，凡是走 `env set`/`set` 预览的路径都会崩。已把
    `key` 改为仅位置参数。
 
-修复后（v2.0.0 之后）两种情况都不再出现。若仍见到 Traceback，先确认加载的确实是
+修复后（v2.0.1 起）两种情况都不再出现。若仍见到 Traceback，先确认加载的确实是
 新代码——被同名副本遮蔽时 `hermes plugins list` 会显示新版本号，但实际执行的是旧副本：
 
 ```bash

@@ -3,7 +3,7 @@
 <h1>📦 pmgr — Hermes Profile Manager</h1>
 
 <p>
-  <img src="https://img.shields.io/badge/version-2.0.0-blue.svg" alt="version">
+  <img src="https://img.shields.io/badge/version-2.0.1-blue.svg" alt="version">
   <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="python">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license">
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg" alt="platform">
@@ -506,7 +506,7 @@ Two distinct faults with very similar symptoms:
    `key`, colliding with the `{key}` placeholder in message templates, so anything going
    through an `env set`/`set` preview crashed. `key` is now positional-only.
 
-Neither occurs after v2.0.0. If you still see a Traceback, first confirm the new code is what
+Neither occurs from v2.0.1 on. If you still see a Traceback, first confirm the new code is what
 is actually loaded — when a same-named copy shadows it, `hermes plugins list` still reports the
 new version while the old copy is what runs:
 
